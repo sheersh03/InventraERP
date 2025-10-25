@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Inventra Design Tokens (semantic.light defaults) */
+:root {
+  /* semantic.light */
+  --color-bg-app: #FFFFFF;
+  --color-bg-elevated: #FAFAFB;
+  --color-bg-subtle: #F4F5F7;
+
+  --color-text-primary: #1E232C;
+  --color-text-secondary: #4E5563;
+  --color-text-muted: #6C7384;
+  --color-text-on-primary: #FFFFFF;
+
+  --color-border-soft: #E9EAEE;
+  --color-border-strong: #DADCE3;
+
+  /* brand */
+  --color-brand-solid: #5A49F0; /* primary.600 */
+  --gradient-brand: linear-gradient(135deg,#4A3AD2 0%,#3154FF 50%,#2EC5FF 100%);
+
+  /* status */
+  --color-success: #15B97A;
+  --color-warning: #F5A524;
+  --color-error:   #E5484D;
+  --color-info:    #2388FF;
+
+  /* glass */
+  --glass-bg: rgba(255,255,255,0.6);
+  --glass-br: rgba(255,255,255,0.35);
+  --glass-shadow: 0 8px 24px rgba(26,30,40,0.10);
+
+  /* AI pulse signature */
+  --ai-pulse-start: #4A3AD2;  /* primary.700 */
+  --ai-pulse-mid:   #6D8CFF;  /* indigo.400 */
+  --ai-pulse-end:   #2EC5FF;  /* electric blue */
+
+  /* Typography tokens */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --fz-display: 28px;
+  --fz-h1: 24px;
+  --fz-h2: 20px;
+  --fz-h3: 16px;
+  --fz-body: 14px;
+  --fz-small: 12px;
+
+  --lh-tight: 1.15;
+  --lh-normal: 1.4;
+  --lh-relaxed: 1.6;
+}
+
+/* Dim mode */
+[data-theme="dim"] {
+  --color-bg-app: #F6F7FA;
+  --color-bg-elevated: #F0F1F6;
+  --color-bg-subtle: #E7E9F1;
+  --glass-bg: rgba(255,255,255,0.55);
+  --glass-br: rgba(255,255,255,0.28);
+  --glass-shadow: 0 8px 24px rgba(26,30,40,0.08);
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --color-bg-app: #1E232C;
+  --color-bg-elevated: #343A46;
+  --color-bg-subtle: #4E5563;
+
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #DADCE3;
+  --color-text-muted: #8E96A8;
+  --color-border-soft: rgba(255,255,255,0.14);
+  --color-border-strong: rgba(255,255,255,0.22);
+
+  --color-brand-solid: #7A6BFF; /* primary.500 */
+  --gradient-brand: linear-gradient(135deg,#4A3AD2 0%,#3154FF 50%,#2EC5FF 100%);
+
+  --glass-bg: rgba(18,22,30,0.55);
+  --glass-br: rgba(255,255,255,0.12);
+  --glass-shadow: 0 16px 30px rgba(0,0,0,0.35);
+}
+
+/* Multi-brand slot (example partner 'orchid') */
+[data-brand="orchid"] {
+  --color-brand-solid: #6E56CF;
+  --gradient-brand: linear-gradient(135deg,#6E56CF 0%,#4338CA 50%,#22D3EE 100%);
+}
+
+/* Base styles */
+html, body, :root {
+  height: 100%;
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+}
+body { font-family: var(--font-sans); font-size: var(--fz-body); line-height: var(--lh-normal); }
+h1, .h1 { font-size: var(--fz-h1); line-height: var(--lh-tight); font-weight: 600; }
+h2, .h2 { font-size: var(--fz-h2); line-height: var(--lh-tight); font-weight: 600; }
+h3, .h3 { font-size: var(--fz-h3); line-height: var(--lh-tight); font-weight: 600; }
+.small { font-size: var(--fz-small); line-height: var(--lh-relaxed); }
+
+/* Density */
+[data-density="simple"] table { font-size: 13px; }
+[data-density="pro"] table { font-size: 12px; }
+[data-density="pro"] th, [data-density="pro"] td { padding-top: 6px; padding-bottom: 6px; }
+
+/* Motion */
+@keyframes waterIn { 0% { opacity: 0; transform: translateY(6px) scale(0.995);} 100% { opacity: 1; transform: translateY(0) scale(1);} }
+.water-in { animation: waterIn .36s ease-out both; }
+
+@keyframes quantumSnap { 0% { transform: scale(0.98);} 100% { transform: scale(1);} }
+.quantum-snap { animation: quantumSnap 120ms cubic-bezier(.2,.8,.2,1); }
+
+/* Focus ring */
+.focus-ring { outline: none; box-shadow: 0 0 0 2px var(--color-bg-app), 0 0 0 4px #B5CCFF; }
+
+/* Overlays */
+.cmd-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.25); backdrop-filter: blur(4px); }
+
+/* Utilities */
+.ai-glow { animation: aiPulse 2.2s ease-in-out infinite; }
+@keyframes aiPulse { 0%{ box-shadow: 0 0 0 0 rgba(106, 76, 255, 0.35);} 50%{ box-shadow: 0 0 24px 8px rgba(46, 197, 255, 0.28);} 100%{ box-shadow: 0 0 0 0 rgba(106, 76, 255, 0.35);} }
+.kbd { display:inline-flex; align-items:center; justify-content:center; border-radius:0.375rem; border:1px solid var(--color-border-strong); padding:0.125rem 0.375rem; font-size:10px; font-weight:500; color:var(--color-text-muted); background:var(--color-bg-elevated); }
+
+/* -------------------------------
+   DROP 4: Motion tokens & micro-interactions
+   ------------------------------- */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 220ms;
+  --motion-slow: 420ms;
+  --ease-standard: cubic-bezier(.2,.8,.2,1);
+  --ease-emphasized: cubic-bezier(.2,.9,0,1);
+}
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin var(--motion-base) linear infinite; }
+
+/* Indeterminate progress */
+@keyframes barSlide {
+  0% { left: -40%; width: 40%; }
+  50% { left: 20%; width: 60%; }
+  100% { left: 100%; width: 80%; }
+}
+
+/* Ripple (for buttons) */
+.btn-ripple { position: relative; overflow: hidden; }
+.btn-ripple::after {
+  content: ""; position: absolute; inset: 0; background: radial-gradient(circle at var(--x,50%) var(--y,50%), rgba(255,255,255,.25), transparent 40%);
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease-emphasized);
+}
+.btn-ripple:active::after { opacity: 1; transition: opacity var(--motion-slow) linear; }
+
+/* Tooltip */
+.tooltip { position: relative; }
+.tooltip:hover::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--color-bg-elevated); color: var(--color-text-primary);
+  border: 1px solid var(--color-border-soft); border-radius: 8px; padding: 6px 8px; font-size: 11px;
+  white-space: nowrap; box-shadow: var(--glass-shadow);
+}
+
+/* Tenant theme overrides (demo via data-brand-name) */
+[data-brand="orchid"] { --color-brand-solid: #6E56CF; }
+[data-brand="blueweave"] { --color-brand-solid: #0072CE; }

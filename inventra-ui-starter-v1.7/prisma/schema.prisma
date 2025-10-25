@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id           String   @id @default(cuid())
+  name         String
+  subdomain    String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  users        User[]
+  orgs         Org[]
+  subscriptions Subscription[]
+  audits       Audit[]
+}
+
+model Org {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sites     Site[]
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  tenantId  String
+  role      Role     @default(worker)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  owner
+  manager
+  finance
+  production
+  worker
+}
+
+model Subscription {
+  id          String   @id @default(cuid())
+  tenantId    String
+  plan        Plan
+  status      SubStatus @default(active)
+  stripeId    String?
+  currentPeriodEnd DateTime?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum Plan {
+  starter
+  growth
+  enterprise
+}
+
+enum SubStatus {
+  trialing
+  active
+  past_due
+  canceled
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  kind      String   // e.g., order.created, seat.active
+  amount    Int      // e.g., 1
+  at        DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  url       String
+  secret    String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Audit {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actor     String
+  action    String
+  entity    String
+  entityId  String
+  meta      String?
+  at        DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model WebhookLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  source    String   // stripe | inventra | custom
+  event     String
+  payload   String
+  createdAt DateTime @default(now())
+}
