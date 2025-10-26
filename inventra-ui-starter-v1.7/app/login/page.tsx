@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type FormState = {
   identifier: string;
@@ -21,431 +22,228 @@ type AnimatedFieldProps = {
   error?: string;
 };
 
-type HotspotId = 'automation' | 'inventory' | 'security';
-
-type ThreeMaterial = {
-  emissiveIntensity?: number;
-  color?: { setHSL: (h: number, s: number, l: number) => void };
-};
-
-type ThreeObject = {
-  rotation: { x: number; y: number; z: number };
-  position: { x: number; y: number; z: number };
-  material?: ThreeMaterial;
-};
-
-type ThreeMesh = ThreeObject & { material?: ThreeMaterial };
-
 function WarehouseExperience() {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [sceneReady, setSceneReady] = useState(false);
-  const [activeHotspot, setActiveHotspot] = useState<HotspotId | null>(null);
-  const [useFallback, setUseFallback] = useState(false);
-  const sceneStateRef = useRef<{
-    gsap: any;
-    highlights: Record<HotspotId, ThreeObject[]>;
-    resetHighlight: () => void;
-    activeIntensity: Record<HotspotId, number>;
-  } | null>(null);
-
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [shouldReduceMotion, setShouldReduceMotion] = useState(false);
   useEffect(() => {
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const lowPower = (navigator as any).deviceMemory && (navigator as any).deviceMemory <= 4;
-    const lowThreads = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
-    const compactViewport = window.innerWidth < 768;
-
-    if (reduceMotion || lowPower || lowThreads || compactViewport) {
-      setUseFallback(true);
-      setSceneReady(false);
-      return;
-    }
-
-    let disposeScene = () => {};
-
-    let mounted = true;
-
-    async function init() {
-      if (!containerRef.current) return;
-
-      const start = performance.now();
-
-      try {
-        const [THREE, gsapModule] = await Promise.all([
-          import(/* webpackIgnore: true */ 'https://cdn.skypack.dev/three@0.159.0?min'),
-          import(/* webpackIgnore: true */ 'https://cdn.skypack.dev/gsap@3.12.5?min'),
-        ]);
-        if (!mounted || !containerRef.current) return;
-
-        const gsap = (gsapModule as any).gsap || (gsapModule as any).default || gsapModule;
-
-        const scene = new THREE.Scene();
-        scene.background = null;
-
-        const camera = new THREE.PerspectiveCamera(
-          28,
-          containerRef.current.clientWidth / containerRef.current.clientHeight,
-          0.1,
-          100
-        );
-        camera.position.set(6, 4, 9);
-        camera.lookAt(0, 1.5, 0);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
-        renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.shadowMap.enabled = false;
-        containerRef.current.appendChild(renderer.domElement);
-
-        const resizeObserver = new ResizeObserver((entries) => {
-          for (const entry of entries) {
-            const { width, height } = entry.contentRect;
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-          }
-        });
-        resizeObserver.observe(containerRef.current);
-
-        const ambientLight = new THREE.AmbientLight(0xbfd3ff, 0.75);
-        scene.add(ambientLight);
-
-        const keyLight = new THREE.DirectionalLight(0x9ab8ff, 1.4);
-        keyLight.position.set(4, 8, 6);
-        scene.add(keyLight);
-
-        const rimLight = new THREE.DirectionalLight(0x80eaff, 0.8);
-        rimLight.position.set(-6, 4, -3);
-        scene.add(rimLight);
-
-        const floorMaterial = new THREE.MeshStandardMaterial({
-          color: 0x0f172a,
-          metalness: 0.15,
-          roughness: 0.4,
-        });
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), floorMaterial);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.y = 0;
-        scene.add(floor);
-
-        const conveyorGroup = new THREE.Group();
-        const beltMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.2, roughness: 0.5 });
-        const belt = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 1.2), beltMaterial);
-        belt.position.set(0, 1.2, 0);
-        conveyorGroup.add(belt);
-
-        const rollerMaterial = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.25 });
-        for (let i = -3; i <= 3; i++) {
-          const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 24), rollerMaterial);
-          roller.rotation.z = Math.PI / 2;
-          roller.position.set(i * 0.9, 1.05, 0);
-          conveyorGroup.add(roller);
-        }
-
-        const packages: ThreeMesh[] = [];
-        const packageMaterial = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.45 });
-        for (let i = 0; i < 4; i++) {
-          const pkg = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), packageMaterial.clone());
-          pkg.position.set(-2 + i * 1.4, 1.5, 0);
-          packages.push(pkg as ThreeMesh);
-          conveyorGroup.add(pkg);
-        }
-
-        scene.add(conveyorGroup);
-
-        const armGroup = new THREE.Group();
-        armGroup.position.set(2.2, 1.2, -1.4);
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.7, 0.4, 32), new THREE.MeshStandardMaterial({ color: 0x1e3a8a }));
-        base.position.y = 0.2;
-        armGroup.add(base);
-
-        const shoulder = new THREE.Mesh(
-          new THREE.BoxGeometry(0.6, 1.8, 0.6),
-          new THREE.MeshStandardMaterial({ color: 0x2563eb, metalness: 0.4 })
-        );
-        shoulder.position.y = 1.4;
-        armGroup.add(shoulder);
-
-        const forearmPivot = new THREE.Group();
-        forearmPivot.position.set(0, 2.2, 0);
-        armGroup.add(forearmPivot);
-
-        const forearm = new THREE.Mesh(
-          new THREE.BoxGeometry(0.45, 1.6, 0.45),
-          new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.3 })
-        );
-        forearm.position.y = 0.9;
-        forearmPivot.add(forearm);
-
-        const claw = new THREE.Mesh(
-          new THREE.TorusGeometry(0.35, 0.1, 16, 32, Math.PI),
-          new THREE.MeshStandardMaterial({ color: 0xf0f9ff, emissive: 0x2563eb, emissiveIntensity: 0.2 })
-        );
-        claw.position.set(0, 1.7, 0);
-        forearmPivot.add(claw);
-
-        scene.add(armGroup);
-
-        const rackMaterial = new THREE.MeshStandardMaterial({ color: 0x312e81, metalness: 0.3, roughness: 0.5 });
-        const rackGroup = new THREE.Group();
-        rackGroup.position.set(-2.6, 1.5, -1.8);
-
-        for (let level = 0; level < 3; level++) {
-          const shelf = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.12, 1.2), rackMaterial);
-          shelf.position.set(0, level * 1, 0);
-          rackGroup.add(shelf);
-
-          for (let column = 0; column < 3; column++) {
-            const bin = new THREE.Mesh(
-              new THREE.BoxGeometry(0.9, 0.7, 0.9),
-              new THREE.MeshStandardMaterial({ color: 0x6366f1, emissive: 0x312e81, emissiveIntensity: 0.05 })
-            );
-            bin.position.set(-1.2 + column * 1.2, level * 1 + 0.5, 0);
-            rackGroup.add(bin);
-          }
-        }
-
-        scene.add(rackGroup);
-
-        const highlights: Record<HotspotId, ThreeObject[]> = {
-          automation: [armGroup],
-          inventory: rackGroup.children,
-          security: [claw],
-        };
-
-        const activeIntensity = {
-          automation: 0.9,
-          inventory: 0.4,
-          security: 1.1,
-        } as const;
-
-        const resetHighlight = () => {
-          rackGroup.children.forEach((child) => {
-            if ((child as ThreeMesh).material) {
-              const material = (child as ThreeMesh).material as ThreeMaterial;
-              material.emissiveIntensity = 0.05;
-            }
-          });
-          (claw.material as ThreeMaterial).emissiveIntensity = 0.2;
-        };
-
-        sceneStateRef.current = {
-          gsap,
-          highlights,
-          resetHighlight,
-          activeIntensity,
-        };
-
-        const armTimeline = gsap.timeline({ repeat: -1, repeatDelay: 0.4 });
-        const tweens: Array<any> = [armTimeline];
-        armTimeline
-          .to(shoulder.rotation, { z: 0.35, duration: 2.4, ease: 'sine.inOut' })
-          .to(shoulder.rotation, { z: -0.3, duration: 2.4, ease: 'sine.inOut' })
-          .to(shoulder.rotation, { z: 0, duration: 1.6, ease: 'sine.inOut' });
-
-        tweens.push(
-          gsap.to(forearmPivot.rotation, { x: 0.9, yoyo: true, repeat: -1, duration: 2.8, ease: 'sine.inOut' })
-        );
-        tweens.push(
-          gsap.to(claw.position, { y: 1.4, yoyo: true, repeat: -1, duration: 2.8, ease: 'sine.inOut' })
-        );
-
-        packages.forEach((pkg, index) => {
-          const duration = 6 + index * 0.3;
-          tweens.push(
-            gsap.to(pkg.position, {
-              x: 2.6,
-              repeat: -1,
-              duration,
-              ease: 'none',
-              modifiers: {
-                x: (x: string) => {
-                  const numeric = parseFloat(x);
-                  return numeric > 3 ? '-2.4' : x;
-                },
-              },
-            })
-          );
-          tweens.push(
-            gsap.to(pkg.rotation, {
-              y: Math.PI * 2,
-              repeat: -1,
-              duration,
-              ease: 'none',
-            })
-          );
-        });
-
-        let rafId: number;
-        const clock = new THREE.Clock();
-
-        const animate = () => {
-          const elapsed = clock.getElapsedTime();
-          belt.material.color.setHSL(0.6, 0.15, 0.18 + Math.sin(elapsed * 0.6) * 0.02);
-          rackGroup.rotation.y = Math.sin(elapsed * 0.15) * 0.08;
-          renderer.render(scene, camera);
-          rafId = renderer.getAnimationLoop()
-            ? 0
-            : requestAnimationFrame(animate);
-        };
-
-        if (renderer.getAnimationLoop()) {
-          renderer.setAnimationLoop(() => {
-            const elapsed = clock.getElapsedTime();
-            belt.material.color.setHSL(0.6, 0.15, 0.18 + Math.sin(elapsed * 0.6) * 0.02);
-            rackGroup.rotation.y = Math.sin(elapsed * 0.15) * 0.08;
-            renderer.render(scene, camera);
-          });
-        } else {
-          animate();
-        }
-
-        disposeScene = () => {
-          tweens.forEach((tween) => tween?.kill?.());
-          if (renderer.getAnimationLoop()) {
-            renderer.setAnimationLoop(null);
-          } else {
-            cancelAnimationFrame(rafId);
-          }
-          resizeObserver.disconnect();
-          renderer.dispose();
-          scene.clear();
-          renderer.domElement.remove();
-          sceneStateRef.current = null;
-        };
-
-        const readyTime = performance.now() - start;
-        if (readyTime < 2000) {
-          setSceneReady(true);
-        } else {
-          setSceneReady(false);
-          setUseFallback(true);
-          disposeScene();
-        }
-      } catch (error) {
-        console.error('Failed to initialize warehouse visualization', error);
-        setSceneReady(false);
-        setUseFallback(true);
-      }
-    }
-
-    init();
-
-    return () => {
-      mounted = false;
-      disposeScene();
-    };
+    const timeout = window.setTimeout(() => setIsLoaded(true), 480);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
-    const state = sceneStateRef.current;
-    if (!state) return;
-    state.resetHighlight();
-    if (!activeHotspot) return;
-
-    const targets = state.highlights[activeHotspot] ?? [];
-    const tweens = targets
-      .filter((target) => 'material' in target && (target as ThreeMesh).material)
-      .map((target) => {
-        const mat = (target as ThreeMesh).material as ThreeMaterial;
-        return state.gsap.to(mat, {
-          emissiveIntensity: state.activeIntensity[activeHotspot],
-          duration: 0.4,
-          ease: 'sine.out',
-        });
-      });
-
-    if (!tweens.length) {
-      targets.forEach((target) => {
-        state.gsap.to(target.rotation, { y: target.rotation.y + 0.3, duration: 0.6, ease: 'sine.out' });
-      });
-    }
-
-    return () => {
-      tweens.forEach((tween) => tween?.kill?.());
-    };
-  }, [activeHotspot]);
-
-  useEffect(() => {
-    if (!sceneReady) return;
-    // light parallax background
-    const node = containerRef.current;
-    if (!node) return;
-
-    const handlePointer = (event: PointerEvent) => {
-      const bounds = node.getBoundingClientRect();
-      const x = (event.clientX - bounds.left) / bounds.width;
-      const y = (event.clientY - bounds.top) / bounds.height;
-      node.style.setProperty('--pointer-x', `${x}`);
-      node.style.setProperty('--pointer-y', `${y}`);
-    };
-
-    node.addEventListener('pointermove', handlePointer);
-    return () => node.removeEventListener('pointermove', handlePointer);
-  }, [sceneReady]);
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setShouldReduceMotion(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   return (
     <div className="relative isolate flex h-[420px] flex-1 flex-col overflow-hidden rounded-3xl bg-[#0d1023]/80 ring-1 ring-white/5 backdrop-blur-lg md:h-auto">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(80,120,255,0.35),_transparent_60%)] transition-opacity duration-500" style={{ opacity: sceneReady ? 1 : 0.4 }} />
-      <div className="absolute inset-0" ref={containerRef} aria-hidden={!sceneReady} />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(80,120,255,0.35),_transparent_60%)]" />
 
-      {useFallback ? (
-        <div className="relative z-10 flex h-full flex-col items-start justify-end gap-4 px-8 py-10 text-white/70">
-          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs font-medium uppercase tracking-[0.24em] text-white/70">
-            Immersive Logistics
+      <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 py-10 md:py-12">
+        {!isLoaded ? (
+          <div role="status" aria-live="polite" className="flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-white/5 px-8 py-10 backdrop-blur-lg">
+            <div className="h-3 w-28 animate-pulse rounded-full bg-white/15" />
+            <div className="h-3 w-40 animate-pulse rounded-full bg-white/10" />
+            <div className="h-3 w-32 animate-pulse rounded-full bg-white/10" />
+            <span className="sr-only">Loading warehouse animation</span>
           </div>
-          <p className="max-w-xs text-sm leading-6 text-white/70">
-            Experience adaptive automation with real-time visibility, optimized for every device.
-          </p>
-        </div>
-      ) : (
-        <>
-          {!sceneReady ? (
-            <div className="relative z-10 flex flex-1 flex-col items-start justify-center gap-3 px-8 text-white/60">
-              <div className="h-2 w-28 animate-pulse rounded-full bg-white/20" />
-              <div className="h-2 w-40 animate-pulse rounded-full bg-white/10" />
-              <div className="h-2 w-32 animate-pulse rounded-full bg-white/10" />
-            </div>
-          ) : null}
+        ) : (
+          <figure
+            className="warehouse-figure w-full max-w-md"
+            role="img"
+            aria-label="Animated illustration of an automated warehouse with robotics, conveyor belts, and drone delivery."
+            data-animated={!shouldReduceMotion}
+          >
+            <svg className="w-full" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet">
+              <defs>
+                <linearGradient id="warehouse-floor" x1="0%" y1="0%" x2="100%" y2="60%">
+                  <stop offset="0%" stopColor="#1e293b" />
+                  <stop offset="100%" stopColor="#0f172a" />
+                </linearGradient>
+                <linearGradient id="tower" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#1f3b8a" />
+                  <stop offset="100%" stopColor="#172554" />
+                </linearGradient>
+                <linearGradient id="belt" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#0f172a" />
+                  <stop offset="50%" stopColor="#111827" />
+                  <stop offset="100%" stopColor="#0f172a" />
+                </linearGradient>
+              </defs>
 
-          <div className="pointer-events-none absolute inset-0" style={{
-            background:
-              'radial-gradient(circle at calc(var(--pointer-x,0.4)*100%) calc(var(--pointer-y,0.5)*100%), rgba(56,189,248,0.25), transparent 55%)',
-            opacity: 0.6,
-          }}
-          />
+              <rect x="0" y="0" width="320" height="180" fill="url(#warehouse-floor)" rx="20" ry="20" opacity="0.95" />
 
-          <div className="relative z-10 mt-auto grid gap-3 px-8 pb-8 text-sm text-white/80">
-            <p className="text-xs uppercase tracking-[0.28em] text-sky-300/80">Warehouse Intelligence</p>
-            <p className="max-w-sm text-[13px] leading-6 text-white/70">
-              Real-time automation, inventory orchestration, and biometric security unify your fulfillment network.
-            </p>
-          </div>
+              <g className="tower">
+                <rect x="30" y="45" width="36" height="100" rx="10" fill="url(#tower)" opacity="0.62" />
+                <rect x="38" y="55" width="20" height="15" rx="4" fill="#334155" />
+                <rect x="38" y="78" width="20" height="15" rx="4" fill="#334155" />
+                <rect x="38" y="101" width="20" height="15" rx="4" fill="#334155" />
+                <rect x="38" y="124" width="20" height="15" rx="4" fill="#334155" />
+              </g>
 
-          <div className="pointer-events-auto absolute inset-x-0 bottom-4 flex flex-wrap justify-center gap-3 px-6">
-            {[
-              { id: 'automation', label: 'Robotic Automation' },
-              { id: 'inventory', label: 'Inventory Flow' },
-              { id: 'security', label: 'Secure Handling' },
-            ].map((hotspot) => (
-              <button
-                key={hotspot.id}
-                onMouseEnter={() => setActiveHotspot(hotspot.id as HotspotId)}
-                onFocus={() => setActiveHotspot(hotspot.id as HotspotId)}
-                onMouseLeave={() => setActiveHotspot(null)}
-                onBlur={() => setActiveHotspot(null)}
-                className={`group relative overflow-hidden rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs font-medium text-white/70 transition duration-300 hover:border-sky-400/60 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60`}
-              >
-                <span className="relative z-10">{hotspot.label}</span>
-                <span className="absolute inset-0 -z-10 bg-gradient-to-r from-sky-500/0 via-sky-400/20 to-sky-500/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+              <g className="shelves">
+                {[0, 1, 2].map((level) => (
+                  <g key={level} transform={`translate(90 ${55 + level * 32})`}>
+                    <rect width="140" height="6" rx="2" fill="#1e3a8a" />
+                    <g fill="#facc15" opacity="0.9">
+                      <rect x="8" y="-20" width="28" height="24" rx="4" />
+                      <rect x="46" y="-14" width="26" height="18" rx="4" />
+                      <rect x="80" y="-22" width="28" height="26" rx="4" />
+                      <rect x="116" y="-16" width="22" height="20" rx="4" />
+                    </g>
+                  </g>
+                ))}
+              </g>
+
+              <g className="conveyor">
+                <rect x="80" y="135" width="200" height="16" rx="8" fill="url(#belt)" />
+                <g className="rollers" fill="#1e293b">
+                  {[...Array(9)].map((_, index) => (
+                    <rect key={index} x={85 + index * 22} y="130" width="4" height="26" rx="2" opacity="0.55" />
+                  ))}
+                </g>
+                <g className="packages" fill="#f59e0b">
+                  <g className="package package-a">
+                    <rect x="92" y="120" width="32" height="22" rx="4" />
+                    <rect x="92" y="120" width="32" height="10" rx="4" fill="#facc15" />
+                  </g>
+                  <g className="package package-b">
+                    <rect x="148" y="120" width="30" height="22" rx="4" />
+                    <rect x="148" y="120" width="30" height="10" rx="4" fill="#facc15" />
+                  </g>
+                  <g className="package package-c">
+                    <rect x="204" y="120" width="34" height="22" rx="4" />
+                    <rect x="204" y="120" width="34" height="10" rx="4" fill="#facc15" />
+                  </g>
+                </g>
+              </g>
+
+              <g className="forklift" transform="translate(160 110)">
+                <rect x="-25" y="35" width="80" height="22" rx="11" fill="#0f172a" opacity="0.95" />
+                <rect x="-15" y="10" width="54" height="32" rx="10" fill="#22d3ee" opacity="0.85" />
+                <rect x="32" y="6" width="6" height="44" rx="2" fill="#1e293b" />
+                <rect x="36" y="40" width="36" height="6" rx="3" fill="#eab308" />
+                <circle cx="-3" cy="47" r="9" fill="#0f172a" stroke="#1f2937" strokeWidth="4" />
+                <circle cx="33" cy="47" r="9" fill="#0f172a" stroke="#1f2937" strokeWidth="4" />
+                <rect x="-8" y="16" width="16" height="12" rx="4" fill="#bae6fd" opacity="0.4" />
+              </g>
+
+              <g className="drone" transform="translate(250 55)">
+                <rect x="-18" y="-6" width="36" height="14" rx="7" fill="#22d3ee" opacity="0.9" />
+                <rect x="-10" y="6" width="20" height="18" rx="6" fill="#0ea5e9" opacity="0.9" />
+                <rect x="-8" y="24" width="16" height="16" rx="4" fill="#facc15" />
+                <rect x="-26" y="-12" width="20" height="4" rx="2" fill="#38bdf8" />
+                <rect x="6" y="-12" width="20" height="4" rx="2" fill="#38bdf8" />
+              </g>
+
+              <g className="beams" opacity="0.25" stroke="#38bdf8" strokeWidth="1">
+                {[0, 1, 2, 3].map((beam) => (
+                  <path key={beam} d={`M0 ${20 + beam * 40} Q 160 ${10 + beam * 40}, 320 ${20 + beam * 40}`} fill="none" />
+                ))}
+              </g>
+            </svg>
+          </figure>
+        )}
+      </div>
+
+      <style jsx>{`
+        .warehouse-figure {
+          position: relative;
+          border-radius: 1.25rem;
+          background: rgba(15, 23, 42, 0.45);
+          box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.08);
+          padding: 1.5rem;
+          backdrop-filter: blur(20px);
+        }
+
+        .warehouse-figure svg {
+          display: block;
+          filter: drop-shadow(0 12px 32px rgba(14, 116, 144, 0.2));
+        }
+
+        .warehouse-figure[data-animated='true'] .forklift {
+          animation: forklift-drive 4.2s ease-in-out infinite;
+          transform-origin: center;
+          transform-box: fill-box;
+        }
+
+        .warehouse-figure[data-animated='true'] .package {
+          animation: package-shift 4s linear infinite;
+          transform-origin: center;
+          transform-box: fill-box;
+        }
+
+        .warehouse-figure[data-animated='true'] .package-b {
+          animation-delay: 0.8s;
+        }
+
+        .warehouse-figure[data-animated='true'] .package-c {
+          animation-delay: 1.6s;
+        }
+
+        .warehouse-figure[data-animated='true'] .drone {
+          animation: drone-hover 3.6s ease-in-out infinite;
+          transform-origin: center;
+          transform-box: fill-box;
+        }
+
+        .warehouse-figure[data-animated='true'] .beams path {
+          stroke-dasharray: 6 12;
+          animation: beam-flow 3.8s linear infinite;
+        }
+
+        @keyframes forklift-drive {
+          0% {
+            transform: translateX(-48px);
+          }
+          35% {
+            transform: translateX(42px);
+          }
+          55% {
+            transform: translateX(42px);
+          }
+          100% {
+            transform: translateX(-48px);
+          }
+        }
+
+        @keyframes package-shift {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(90px);
+          }
+        }
+
+        @keyframes drone-hover {
+          0% {
+            transform: translateY(0) scale(1);
+          }
+          50% {
+            transform: translateY(10px) scale(1.03);
+          }
+          100% {
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes beam-flow {
+          0% {
+            stroke-dashoffset: 0;
+          }
+          100% {
+            stroke-dashoffset: -120;
+          }
+        }
+      `}</style>
     </div>
   );
 }
+
 
 function AnimatedField({
   id,
@@ -512,30 +310,26 @@ function AnimatedField({
 }
 
 export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>({ identifier: '', password: '', storeId: '' });
   const [status, setStatus] = useState<FormStatus>('idle');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('Enter any credentials to continue while we finalize authentication.');
   const [shakeKey, setShakeKey] = useState(0);
 
   const errors = useMemo(() => {
     const next: Partial<Record<keyof FormState, string>> = {};
 
     if (!form.identifier.trim()) {
-      next.identifier = 'Enter your email or username to continue.';
-    } else if (!/^[\w.+-]+@([\w-]+\.)+[\w-]+$/.test(form.identifier.trim()) && form.identifier.trim().length < 3) {
-      next.identifier = 'Provide a valid email or username.';
+      next.identifier = 'Identifier is required.';
     }
 
     if (!form.password) {
-      next.password = 'Password cannot be empty.';
-    } else if (form.password.length < 8) {
-      next.password = 'Use at least 8 characters for security.';
+      next.password = 'Password is required.';
     }
 
     if (!form.storeId.trim()) {
-      next.storeId = 'Unique store ID is required.';
-    } else if (!/^[a-zA-Z0-9-]{3,}$/.test(form.storeId.trim())) {
-      next.storeId = 'Store ID should be alphanumeric (dashes allowed).';
+      next.storeId = 'Store ID is required.';
     }
 
     return next;
@@ -566,19 +360,27 @@ export default function LoginPage() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Invalid credentials');
+      const data = (await response.json().catch(() => null)) as { success?: boolean; message?: string } | null;
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Temporary login could not be established.');
       }
 
       setStatus('success');
-      setMessage('Success! Redirecting to your workspace…');
+      setMessage(data.message || 'Temporary login active. Redirecting to your workspace…');
+
+      const redirectTo = searchParams.get('redirectTo');
+      const destination = redirectTo && redirectTo.startsWith('/') ? redirectTo : '/';
 
       setTimeout(() => {
-        window.location.href = 'http://localhost:3000';
-      }, 900);
+        router.push(destination);
+        router.refresh();
+      }, 600);
     } catch (error) {
+      console.error('Temporary login failed', error);
       setStatus('error');
-      setMessage("We couldn't verify those credentials. Try again or reset your password.");
+      const fallback = error instanceof Error ? error.message : 'Mock authentication failed. Please try again.';
+      setMessage(fallback);
       setShakeKey((value) => value + 1);
     }
   }
@@ -623,28 +425,12 @@ export default function LoginPage() {
                 <p className="max-w-md text-sm leading-6 text-white/70">
                   Welcome to Inventra ERP — fast, collaborative, AI-native. Authenticate securely to continue orchestrating your multi-tenant operations.
                 </p>
-              </div>
-              <div className="grid gap-4 text-xs text-white/60">
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 backdrop-blur">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500/90 shadow-[0_8px_24px_rgba(79,70,229,0.4)]" />
-                  <div>
-                    <p className="font-semibold text-white/80">Adaptive Capacity</p>
-                    <p>Real-time load balancing with predictive alerts.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 backdrop-blur">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400/80 shadow-[0_8px_24px_rgba(14,165,233,0.35)]" />
-                  <div>
-                    <p className="font-semibold text-white/80">Quantum Sync</p>
-                    <p>Inventory, production, and sales data unified instantly.</p>
-                  </div>
+                <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs text-amber-100 shadow-[0_10px_30px_rgba(245,158,11,0.12)]">
+                  Temporary login active: any identifier, password, and store ID will work until backend authentication is connected.
                 </div>
               </div>
             </div>
           </div>
-          <footer className="relative z-10 text-xs text-white/50">
-            © {new Date().getFullYear()} Inventra ERP. Secure by design.
-          </footer>
         </section>
 
         <section
@@ -700,7 +486,7 @@ export default function LoginPage() {
               className={`group relative mt-6 w-full overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-400 px-5 py-3 text-sm font-semibold text-white shadow-[0_20px_40px_rgba(76,29,149,0.45)] transition-all duration-300 ease-[var(--ease-emphasized)] focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-2 focus:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-70 ${
                 status === 'success' ? 'animate-[pulse_1.6s_ease-in-out_infinite]' : ''
               }`}
-              disabled={status === 'validating'}
+              disabled={status === 'validating' || status === 'success'}
             >
               <span className="relative z-10 flex items-center justify-center gap-2">
                 {status === 'validating' ? (
